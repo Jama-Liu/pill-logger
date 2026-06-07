@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>💊 吃药记录</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f0f4f0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .app { width: 100%; max-width: 400px; }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  .total {
+    text-align: center;
+    padding: 24px 20px;
+  }
+  .total .num {
+    font-size: 64px;
+    font-weight: 800;
+    color: #2c7a4d;
+    line-height: 1;
+  }
+  .total .label {
+    font-size: 14px;
+    color: #888;
+    margin-top: 6px;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 14px;
+    color: #555;
+  }
+  .info-row span:last-child { font-weight: 600; color: #333; }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 16px 0;
+    border: none;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.1s, opacity 0.1s;
+    -webkit-appearance: none;
+  }
+  .btn:active { transform: scale(0.96); opacity: 0.85; }
+
+  .btn-record {
+    background: #2c7a4d;
+    color: #fff;
+    font-size: 20px;
+    padding: 20px 0;
+  }
+  .btn-undo {
+    background: #fff;
+    color: #e74c3c;
+    border: 2px solid #e74c3c;
+  }
+
+  .history { margin-top: 4px; }
+  .history .title {
+    font-size: 13px;
+    color: #999;
+    padding: 0 4px 8px;
+  }
+  .history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #fafafa;
+    border-radius: 10px;
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  .history-item .seq { font-weight: 700; color: #2c7a4d; min-width: 36px; }
+  .history-item .dt { color: #555; }
+  .history-item .tm { color: #999; font-size: 12px; margin-left: 4px; }
+
+  .toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 20px;
+    font-size: 15px;
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  .empty { text-align: center; color: #ccc; padding: 20px; font-size: 14px; }
+  .danger { color: #e74c3c; font-size: 12px; margin-top: 8px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="card total">
+    <div class="num" id="totalNum">212</div>
+    <div class="label">累计总粒数</div>
+  </div>
+
+  <div class="card">
+    <div class="info-row"><span>📅 上次记录</span><span id="lastDate">—</span></div>
+    <div class="info-row"><span>⏱ 距上次</span><span id="lastDiff">—</span></div>
+    <div class="info-row"><span>📊 间隔范围</span><span id="range">—</span></div>
+    <div class="info-row"><span>📋 新增记录</span><span id="newCount">0</span></div>
+
+    <div class="btn-row">
+      <button class="btn btn-record" onclick="doRecord()">💊 记一粒</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-undo" onclick="doUndo()">↩ 撤销</button>
+    </div>
+    <div class="danger" id="duplicateWarn" style="display:none">⚠️ 今天已经记录过了</div>
+  </div>
+
+  <div class="card history">
+    <div class="title">📝 最近记录</div>
+    <div id="historyList"><div class="empty">暂无记录</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE_COUNT = 212;
+const START_DATE = "2026-06-05";
+const STORAGE_KEY = "pill_records";
+
+function getRecords() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+  catch { return []; }
+}
+function saveRecords(arr) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 1500);
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit" });
+}
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString("zh-CN", { hour:"2-digit", minute:"2-digit" });
+}
+function fmtWeek(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("zh-CN", { weekday:"short" });
+}
+
+function render() {
+  const records = getRecords();
+  const total = BASE_COUNT + records.length;
+
+  document.getElementById("totalNum").textContent = total;
+  document.getElementById("newCount").textContent = records.length + " 粒";
+
+  if (records.length > 0) {
+    const last = records[records.length - 1];
+    const lastIso = last.dt;
+    document.getElementById("lastDate").textContent = fmtDate(lastIso) + " " + fmtTime(lastIso) + " " + fmtWeek(lastIso);
+
+    if (records.length > 1) {
+      const prevIso = records[records.length - 2].dt;
+      const diff = Math.round((new Date(lastIso) - new Date(prevIso)) / 86400000);
+      document.getElementById("lastDiff").textContent = diff + " 天";
+    } else {
+      const diff = Math.round((new Date(lastIso) - new Date(START_DATE)) / 86400000);
+      document.getElementById("lastDiff").textContent = "距起始 " + diff + " 天";
+    }
+
+    if (records.length >= 2) {
+      const ints = [];
+      for (let i = 1; i < records.length; i++) {
+        ints.push(Math.round((new Date(records[i].dt) - new Date(records[i-1].dt)) / 86400000));
+      }
+      document.getElementById("range").textContent = Math.min(...ints) + "~" + Math.max(...ints) + " 天";
+    } else {
+      document.getElementById("range").textContent = "—";
+    }
+
+    // 今天已记录？
+    const todayStr = new Date().toLocaleDateString("zh-CN");
+    const lastDateStr = new Date(lastIso).toLocaleDateString("zh-CN");
+    document.getElementById("duplicateWarn").style.display = todayStr === lastDateStr ? "block" : "none";
+  } else {
+    document.getElementById("lastDate").textContent = "—";
+    document.getElementById("lastDiff").textContent = "—";
+    document.getElementById("range").textContent = "—";
+    document.getElementById("duplicateWarn").style.display = "none";
+  }
+
+  // 历史列表
+  const listEl = document.getElementById("historyList");
+  if (records.length === 0) {
+    listEl.innerHTML = '<div class="empty">暂无记录</div>';
+  } else {
+    const recent = records.slice(-15).reverse();
+    listEl.innerHTML = recent.map((r, i) => {
+      const idx = records.length - recent.length + i + 1;
+      const globalCount = BASE_COUNT + idx;
+      return `<div class="history-item">
+        <span class="seq">#${globalCount}</span>
+        <span class="dt">${fmtDate(r.dt)} <span class="tm">${fmtTime(r.dt)}</span> ${fmtWeek(r.dt)}</span>
+      </div>`;
+    }).join("");
+  }
+}
+
+function doRecord() {
+  const records = getRecords();
+  const todayStr = new Date().toLocaleDateString("zh-CN");
+
+  if (records.length > 0) {
+    const lastDateStr = new Date(records[records.length - 1].dt).toLocaleDateString("zh-CN");
+    if (lastDateStr === todayStr) {
+      toast("今天已经记录过了！");
+      return;
+    }
+  }
+
+  records.push({ dt: new Date().toISOString() });
+  saveRecords(records);
+  toast("✅ 已记录！第 " + (BASE_COUNT + records.length) + " 粒");
+  render();
+}
+
+function doUndo() {
+  const records = getRecords();
+  if (records.length === 0) {
+    toast("没有可撤销的记录");
+    return;
+  }
+  const removed = records.pop();
+  saveRecords(records);
+  toast("🗑 已撤销 " + fmtDate(removed.dt) + " " + fmtTime(removed.dt));
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

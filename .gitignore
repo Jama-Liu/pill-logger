@@ -1,0 +1,10 @@
+# 个人数据，绝对不能上传
+records.json
+config.json
+
+# 本地脚本（不需要部署到网页）
+log.js
+server.js
+
+# Node
+node_modules/
