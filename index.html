@@ -223,8 +223,12 @@ function render() {
     const lastDateStr = new Date(lastIso).toLocaleDateString("zh-CN");
     document.getElementById("duplicateWarn").style.display = todayStr === lastDateStr ? "block" : "none";
   } else {
-    document.getElementById("lastDate").textContent = "—";
-    document.getElementById("lastDiff").textContent = "—";
+    // 没有新增记录时，显示起始基线
+    const startDate = new Date(START_DATE);
+    const now = new Date();
+    const diff = Math.round((now - startDate) / 86400000);
+    document.getElementById("lastDate").textContent = fmtDate(START_DATE) + " (起始)";
+    document.getElementById("lastDiff").textContent = "距起始 " + diff + " 天";
     document.getElementById("range").textContent = "—";
     document.getElementById("duplicateWarn").style.display = "none";
   }
@@ -232,7 +236,11 @@ function render() {
   // 历史列表
   const listEl = document.getElementById("historyList");
   if (records.length === 0) {
-    listEl.innerHTML = '<div class="empty">暂无记录</div>';
+    listEl.innerHTML = `<div class="history-item">
+      <span class="seq">#${BASE_COUNT}</span>
+      <span class="dt">${fmtDate(START_DATE)} ${fmtWeek(START_DATE)}</span>
+      <span style="color:#999;font-size:12px">起始</span>
+    </div>`;
   } else {
     const recent = records.slice(-15).reverse();
     listEl.innerHTML = recent.map((r, i) => {
